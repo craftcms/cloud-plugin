@@ -1,8 +1,9 @@
 <?php
 
-namespace craft\cloud;
+namespace craft\cloud\imagetransforms;
 
 use Craft;
+use Illuminate\Support\Collection;
 
 /**
  * @see https://developers.cloudflare.com/images/transform-images/transform-via-workers/#fetch-options
@@ -10,43 +11,36 @@ use Craft;
  */
 class ImageTransform extends \craft\models\ImageTransform
 {
-    /**
-     * @var bool|null Enable animation (for GIFs, WebP)
-     */
     public ?bool $anim = null;
-
-    /**
-     * @var string|null Background color for transparency or letterbox mode
-     */
     public ?string $background = null;
 
     /**
-     * @var int|null Blur radius (1-250)
+     * @var int<1, 250>|null
      */
     public ?int $blur = null;
 
     /**
-     * @var array{color: string, width: int}|array{color: string, top: int, right: int, bottom: int, left: int}|null Border configuration
+     * @var array{color: string, width: int}|array{color: string, top: int, right: int, bottom: int, left: int}|null
      */
     public ?array $border = null;
 
     /**
-     * @var float|null Brightness adjustment (-1.0 to 1.0)
+     * @var float|null
      */
     public ?float $brightness = null;
 
     /**
-     * @var string|null Compression level
+     * @var 'fast'|null
      */
     public ?string $compression = null;
 
     /**
-     * @var float|null Contrast adjustment (-1.0 to 1.0)
+     * @var float|null
      */
     public ?float $contrast = null;
 
     /**
-     * @var float|null Device pixel ratio (DPR)
+     * @var float|null
      */
     public ?float $dpr = null;
 
@@ -56,68 +50,64 @@ class ImageTransform extends \craft\models\ImageTransform
     public ?array $draw = null;
 
     /**
-     * @var string|null Fit mode override (Cloudflare-specific)
+     * @var 'scale-down'|'contain'|'cover'|'crop'|'pad'|'squeeze'|null
      */
     public ?string $fit = null;
 
     /**
-     * @var string|null Flip direction ('horizontal', 'vertical', 'both')
+     * @var 'h'|'v'|'hv'|null
      */
     public ?string $flip = null;
 
     /**
-     * @var float|null Gamma correction
+     * @var 'auto'|'avif'|'webp'|'jpeg'|'baseline-jpeg'|'json'|string|null
+     */
+    public ?string $format = null;
+
+    /**
+     * @var float|null
      */
     public ?float $gamma = null;
 
     /**
-     * @var 'face'|'left'|'right'|'top'|'bottom'|'center'|'auto'|'entropy'|array{x?: float, y?: float, mode?: 'remainder'|'box-center'}|null Gravity/focus point
+     * @var 'auto'|'face'|'left'|'right'|'top'|'bottom'|array{x?: float, y?: float}|null
      */
-    public null|string|array $gravity = null;
+    public string|array|null $gravity = null;
+
+    public ?int $height;
 
     /**
-     * @var string|null Metadata handling ('keep', 'copyright', 'none')
+     * @var 'keep'|'copyright'|'none'|null
      */
     public ?string $metadata = null;
 
     /**
-     * @var string|null Error handling ('redirect')
-     */
-    public ?string $onerror = null;
-
-    /**
-     * @var string|null Origin authentication
-     */
-    public ?string $originAuth = null;
-
-    /**
-     * @var int|null Rotation angle (0, 90, 180, 270, 360)
+     * @var int|null
      */
     public ?int $rotate = null;
 
     /**
-     * @var float|null Saturation adjustment (-1.0 to 1.0)
+     * @var float|null
      */
     public ?float $saturation = null;
 
     /**
-     * @var string|null Segment to extract ('foreground', 'background')
+     * @var 'foreground'|null
      */
     public ?string $segment = null;
 
     /**
-     * @var float|null Sharpen amount (0.0 to 10.0)
+     * @var float|null
      */
     public ?float $sharpen = null;
 
     /**
-     * @var 'border'|array{top?: int, bottom?: int, left?: int, right?: int, width?: int, height?: int, border?: bool|array{color?: string, tolerance?: int, keep?: int}}|null Trim configuration
+     * @var 'border'|array{top?: int, bottom?: int, left?: int, right?: int, width?: int, height?: int, border?: bool|array{color?: string, tolerance?: int, keep?: int}}|null
      */
     public null|string|array $trim = null;
 
-    /**
-     * @var float|null Zoom factor
-     */
+    public ?int $width;
+
     public ?float $zoom = null;
 
     /**
@@ -129,18 +119,25 @@ class ImageTransform extends \craft\models\ImageTransform
         return parent::fields();
     }
 
-    /**
-     * Normalize Cloudflare-specific properties based on base ImageTransform properties.
-     *
-     * @return static
-     */
     public function normalize(): static
     {
-        $this->fit ??= $this->computeFit();
-        $this->background ??= $this->computeBackground();
-        $this->format ??= $this->computeFormat();
-        $this->gravity ??= $this->computeGravity();
+        $this->format = $this->computeFormat();
+        $this->fit = $this->computeFit();
+        $this->background = $this->computeBackground();
+        $this->gravity = $this->computeGravity();
         return $this;
+    }
+
+    public function toOptions(): array
+    {
+        $reflection = new \ReflectionClass($this);
+        $this->normalize();
+
+        return Collection::make($reflection->getProperties(\ReflectionProperty::IS_PUBLIC))
+            ->filter(fn($property) => $property->getDeclaringClass()->getName() === self::class)
+            ->mapWithKeys(fn($property) => [$property->getName() => $property->getValue($this)])
+            ->filter(fn($value) => $value !== null)
+            ->all();
     }
 
     /**
@@ -168,6 +165,10 @@ class ImageTransform extends \craft\models\ImageTransform
      */
     private function computeFit(): string
     {
+        if ($this->fit !== null) {
+            return $this->fit;
+        }
+
         // Cloudflare doesn't have an exact match to `stretch`.
         // `cover` is close, but will crop instead of stretching.
         return match ($this->mode) {
@@ -185,6 +186,10 @@ class ImageTransform extends \craft\models\ImageTransform
      */
     private function computeBackground(): ?string
     {
+        if ($this->background !== null) {
+            return $this->background;
+        }
+
         return $this->mode === 'letterbox'
             ? $this->fill ?? '#FFFFFF'
             : null;
@@ -193,10 +198,14 @@ class ImageTransform extends \craft\models\ImageTransform
     /**
      * Compute the Cloudflare gravity from the base position setting.
      *
-     * @return array{x: float, y: float}|null
+     * @return array{x: float, y: float}|null|'face'
      */
-    private function computeGravity(): ?array
+    private function computeGravity(): array|null|string
     {
+        if ($this->gravity !== null) {
+            return $this->gravity;
+        }
+
         if ($this->position === 'center-center') {
             return null;
         }
