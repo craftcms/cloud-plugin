@@ -2,7 +2,7 @@
 
 namespace craft\cloud\fs;
 
-use craft\cloud\Plugin;
+use craft\cloud\Config;
 use League\Uri\Contracts\SegmentedPathInterface;
 
 abstract class BuildsFs extends Fs
@@ -14,6 +14,6 @@ abstract class BuildsFs extends Fs
     {
         return parent::createBucketPrefix()
             ->append('builds')
-            ->append(Plugin::getInstance()->getConfig()->buildId);
+            ->append(Config::create()->buildId);
     }
 }
